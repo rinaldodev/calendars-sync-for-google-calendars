@@ -9,9 +9,9 @@ Selected events will be copied from the source calendar to the target calendar.
 ## Advantages over other solutions
 
 - Lightweight synchonization by using incremental sync
-- Saves quota by using batch requests
+- Better performance and quota management by using batch requests
 - Easily customizable by changing constant values
-- Well documented - easy to make your own changes
+- Well documented and logged - easy to make your own changes
 - Hability to run from any Google account
 - Respect notifications settings by not recreating events everytime
 - Copy only relevant events by using the default opinionated filters

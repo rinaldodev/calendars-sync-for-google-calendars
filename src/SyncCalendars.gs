@@ -88,6 +88,12 @@ const AVANCED_SKIP = {};
  * If you are not sure what you are doing, don't change them.
  */
 
+// The amount of HTTP requests to group when creating/updating events.
+const BATCH_REQUEST_SIZE = 5;
+
+// The amount of HTTP requests to group when deleting events.
+const BATCH_REQUEST_SIZE_DELETION = Math.min(BATCH_REQUEST_SIZE * 3, 50);
+
 // Unique character to use in the title of the event to identify it as a clone. This is used to find and delete all previously created events.
 // If you change this before deleting all the existing events, they will never get deleted by the script.
 // https://unicode-table.com/en/200B/
@@ -139,7 +145,7 @@ END_TIME.setDate(END_TIME.getDate() + SYNC_DAYS_IN_FUTURE + 1);
 function run() {
   let lock = LockService.getScriptLock();
   try {
-    lock.waitLock(90000);  
+    lock.waitLock(5000);
 
     let keepGoing = _applyUtilityBehaviors();
     if (!keepGoing) {
@@ -247,8 +253,13 @@ function _runIncrementalSync(syncToken) {
 function _runFullSync(skipSync) {
   _deleteAllCopiedEvents();
 
-  if (!skipSync) {
-    _syncAllEvents();
+  try {
+    if (!skipSync) {
+      _syncAllEvents();
+    }
+  } catch (e) {
+    console.error("Error while running full sync, deleting all properties to start fresh. Error: " + e);
+    PROPERTIES.deleteAllProperties();
   }
 }
 
@@ -256,6 +267,8 @@ function _runFullSync(skipSync) {
  * Deletes all the events that were previously created in the target calendar (within the filtered time frame).
  */
 function _deleteAllCopiedEvents() {
+  PROPERTIES.deleteAllProperties();
+
   let requestArgs = {
       timeMin: START_TIME.toISOString(),
       timeMax: END_TIME.toISOString(),
@@ -265,17 +278,23 @@ function _deleteAllCopiedEvents() {
       q: UNIQUE_SEARCH_CHARACTER
     };
   
-  let requestList = [];
   let targetEvents;
 
+  let requestList = [];
   do {
     targetEvents = Calendar.Events.list(TARGET_CALENDAR_ID, requestArgs);
-    console.log(`Events listed to be deleted, found ${targetEvents.items.length} events.`);
+    console.log(`Events listed to be deleted, found ${targetEvents.items.length} events to process (before filtering).`);
 
     for (const targetEvent of targetEvents.items) {
       // safety check since the search API currently ignores the UNIQUE_SEARCH_CHARACTER filter and instead returns all events
       if (targetEvent.summary && targetEvent.summary.includes(UNIQUE_SEARCH_CHARACTER)) {
         _addToBatchRequestList("DELETE", requestList, targetEvent)
+      }
+
+      if (requestList.length >= BATCH_REQUEST_SIZE_DELETION) {
+        console.log(`There are ${requestList.length} items in the batch request to delete. Sending batch.`)
+        _runBatchRequest(requestList);
+        requestList = [];
       }
     }
 
@@ -283,11 +302,10 @@ function _deleteAllCopiedEvents() {
     console.log(`Next page token for deletion? ${requestArgs.pageToken}`)
   } while (requestArgs.pageToken);
 
-  console.log(`There are ${requestList.length} items in the batch request list to be deleted.`)
+  console.log(`There are ${requestList.length} items in the batch request to delete. Sending batch.`)
   _runBatchRequest(requestList);
 
-  console.log(`Events deleted.`);
-  PROPERTIES.deleteAllProperties();
+  console.log(`All copied events were deleted.`);
 }
 
 /**
@@ -310,22 +328,28 @@ function _syncAllEvents() {
  * The expeceted behavior is that a full sync will call this without a sync token, while an incremental sync calls with a sync token.
  */
 function _syncEventsWithArgs(requestArgs) {
-  let requestList = [];
   let events;
 
+  let requestList = [];
   do {
     events = Calendar.Events.list(SOURCE_CALENDAR_ID, requestArgs);
     console.log(`Events listed, found ${events.items.length} events to sync.`);
 
     for (const event of events.items) {
       _createEventRequest(event, requestList); 
+
+      if (requestList.length >= BATCH_REQUEST_SIZE) {
+        console.log(`There are ${requestList.length} items in the batch request list. Sending batch.`)
+        _runBatchRequest(requestList);
+        requestList = [];
+      }
     }
 
     requestArgs.pageToken = events.nextPageToken;
     console.log(`Next page token? ${requestArgs.pageToken}`)
   } while (requestArgs.pageToken);
 
-  console.log(`There are ${requestList.length} items in the batch request list.`)
+  console.log(`There are ${requestList.length} items in the batch request list. Sending batch.`)
   _runBatchRequest(requestList);
 
   console.log(`Batch requests executed. Persisting sync token for the next run: ${events.nextSyncToken}`);
@@ -351,7 +375,7 @@ function _syncEventsWithArgs(requestArgs) {
 function _createEventRequest(sourceEvent, requestList) {
   let stringRepresentation;
   if (sourceEvent.start && sourceEvent.summary) {
-    stringRepresentation = `${sourceEvent.start} - ${sourceEvent.summary}`;
+    stringRepresentation = `${sourceEvent.id} - ${sourceEvent.start} - ${sourceEvent.summary}`;
   } else {
     stringRepresentation = JSON.stringify(sourceEvent);
   }
@@ -387,7 +411,6 @@ function _createEventRequest(sourceEvent, requestList) {
   }
 
   if (!shouldCopy) {
-    console.log(`Event should not be copied: ${stringRepresentation}`);
     if (existingTargetEventId) {
       console.log(`Adding request to delete the existing event in the target calendar: ${stringRepresentation}`);
       // if we shouldn't copy and it is present in the map, it means it was inserted before
@@ -403,7 +426,7 @@ function _createEventRequest(sourceEvent, requestList) {
   } else {
     // if not, then we generated a new id and insert a new event in the calendar and in the properties map
     console.log(`Adding request to create the event in the target calendar: ${stringRepresentation}`);
-    targetEvent.id = (Math.random()+'').replace('.','');
+    targetEvent.id = (Math.random()+'').replace('.','').replace(',','');
     _addToBatchRequestList("POST", requestList, targetEvent);
     PROPERTIES.setProperty(sourceEvent.id, targetEvent.id);
   }
@@ -419,18 +442,21 @@ function _shouldEventByCopied(sourceEvent) {
 
   for (const status of SKIP_STATUS) {
     if (sourceEvent.status === status) {
+      console.log(`Event ${sourceEvent.id} won't be copied because its status is ${status}`);
       return false;
     }
   }
 
   for (const transparency of SKIP_TRANSPARENCY) {
     if (sourceEvent.transparency === transparency) {
+      console.log(`Event ${sourceEvent.id} won't be copied because its transparency is ${transparency}`);
       return false;
     }
   }
 
   for (const visibility of SKIP_VISIBILITY) {
     if (sourceEvent.visibility === visibility) {
+      console.log(`Event ${sourceEvent.id} won't be copied because its visibility is ${visibility}`);
       return false;
     }
   }  
@@ -442,6 +468,7 @@ function _shouldEventByCopied(sourceEvent) {
   if (SKIP_DECLINED && sourceEvent.attendees) {
     for (const attendee of sourceEvent.attendees) {
       if (attendee.email === SOURCE_CALENDAR_ID && attendee.responseStatus === "declined") {
+        console.log(`Event ${sourceEvent.id} won't be copied because the responseStatus for ${attendee.email} is ${attendee.responseStatus}`);
         return false;
       }
     }
@@ -449,6 +476,7 @@ function _shouldEventByCopied(sourceEvent) {
 
   for (const word of SKIP_SUMMARY_INCLUDES) {
     if (sourceEvent.summary && sourceEvent.summary.includes(word)) {
+      console.log(`Event ${sourceEvent.id} won't be copied because its summary includes ${word}`);
       return false;
     }
   }
@@ -457,6 +485,7 @@ function _shouldEventByCopied(sourceEvent) {
     if (sourceEvent.hasOwnProperty(property)) {
       for (const filter of AVANCED_SKIP[property]) {
         if (sourceEvent[property].includes(filter)) {
+          console.log(`Event ${sourceEvent.id} won't be copied because its property ${property} includes ${filter}`);
           return false;
         }
       }
@@ -487,12 +516,12 @@ function _checkDateAllowed(sourceEvent) {
     if (date) {
       let dateObj = new Date(date);
       if (dateObj > START_TIME && dateObj < END_TIME) {
-        dateAllowed = true;
-        break;
+        return true;
       }
     }
   }
 
+  console.log(`Event ${sourceEvent.id} won't be copied because none of its dates are inside the defined range: ${allDates}`);
   return false;
 }
 
