@@ -2,7 +2,7 @@
 
 This is a script template for Google Apps Script that allows you to synchronize Google Calendars.
 
-Just paste it in a new Google Apps Script project, configure your source and target calendars, and let the magic happens. 
+Just paste it in a new Google Apps Script project, configure your source and target calendars, and let the magic happen. 
 
 Selected events will be copied from the source calendar to the target calendar.
 
