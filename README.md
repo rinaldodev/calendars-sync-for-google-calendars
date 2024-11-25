@@ -6,12 +6,13 @@ Just paste it in a new Google Apps Script project, configure your source and tar
 
 Selected events will be copied from the source calendar to the target calendar.
 
-## Advantages over other solutions
+## Advantages
 
-- Lightweight synchonization by using incremental sync
-- Better performance and quota management by using batch requests
+- Lightweight synchonization by using incremental sync and batch requests
 - Easily customizable by changing constant values
-- Well documented and logged - easy to make your own changes
+- Well documented and logged - easy to add your own changes and debug
+
+And more:
 - Hability to run from any Google account
 - Respect notifications settings by not recreating events everytime
 - Copy only relevant events by using the default opinionated filters
@@ -42,7 +43,7 @@ The script will run inside a Google Apps Script associated to a Google Account. 
 3. Click on "New Project".
 4. Replace everything in `Code.gs` with the contents of [SyncCalendars.gs].
 5. Create a new script file called `BatchRequests.gs` with the contents of [BatchRequests.gs].
-6. Update as least the `SOURCE_CALENDAR_ID` and `TARGET_CALENDAR_ID` with the desired emails.
+6. Update at least the `SOURCE_CALENDAR_ID` and `TARGET_CALENDAR_ID` with the desired emails.
 7. I recommend taking a look at all the basic settings to avoid having to force full syncs afterwards.
 8. Click the `Project Settings` Gear icon on the left panel.
 9. Check the `Show "appsscript.json" manifest file in editor`.
@@ -67,9 +68,9 @@ The script will run inside a Google Apps Script associated to a Google Account. 
 - **Time-driven** will run every X minutes/hours/etc. I recommend using this settings to avoid using too much quota.
 - **From calendar** will run when a given calendar updates. Use this if you want instant synchonization with the risk of running out of quota.
 
-3. In both cases you should use:
+3. In both cases you should set:
 
-- "Choose which function to run": `SyncCalendarsIntoOne`
+- "Choose which function to run": `run`
 - "Choose which deployment should run": `Head`
 
 The rest is up to you. Enjoy your calendars in sync!
@@ -79,10 +80,22 @@ If you feel like it, take a look at the more advanced constant options in the sc
 ## About quota
 
 - Google App Scripts has a daily quote of 5k events created per day. See [Quotas for Google Services] and [Manage Quotas].
+- If it's for personal use I wouldn't worry too much about it. With reasonable date ranges (like the preconfigured ones) you'll hardly hit the limits.
+
+## License
+
+- This project is provided under the MIT License.
+- See [LICENSE] for more information.
+
+## Issues
+
+- The script is provided "as is". As much as it has been extensively tested, not all scenarios can be garanteed to work. 
+- Make sure to use sane filters when testing if you don't want to mess up with existing events. The preconfigured filters should be good enough for some initial testing.
+- If you still face challenges using the script, consider opening a [GitHub issue](https://github.com/rinaldodev/calendars-sync-for-google-calendars/issues) in this repository.
 
 ## Credits
 
-This was based on and includes multiple parts of https://github.com/karbassi/sync-multiple-google-calendars
+- This project includes parts of work done in https://github.com/karbassi/sync-multiple-google-calendars.
 
 [Google Apps Scripts]: https://script.google.com/intro
 [SyncCalendars.gs]: src/SyncCalendars.gs
@@ -90,3 +103,4 @@ This was based on and includes multiple parts of https://github.com/karbassi/syn
 [appsscript.json]: src/appsscript.json
 [Quotas for Google Services]: https://developers.google.com/apps-script/guides/services/quotas
 [Manage Quotas]: https://developers.google.com/calendar/api/guides/quota
+[LICENSE]: ./LICENSE
